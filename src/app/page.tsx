@@ -1,4 +1,5 @@
 "use client"
+import Footer from '@/components/Footer';
 import React, { useState, useRef, useEffect } from 'react';
 
 export default function Home() {
@@ -516,6 +517,7 @@ export default function Home() {
         </div>
         
       </div>
+      <Footer/>
     </main>
   );
 }
