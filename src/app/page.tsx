@@ -10,6 +10,7 @@ export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const pasteRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [reflectionScore, setReflectionScore] = useState<number | null>(null);
  
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -19,6 +20,116 @@ export default function Home() {
       reader.readAsDataURL(file);
     }
   };
+
+  const calculateLuminance = (r: number, g: number, b: number): number => {
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+
+  const analyzeLightingConsistency = (imgData: ImageData): number => {
+    const { data } = imgData;
+    const luminanceValues: number[] = [];
+  
+    // Calcular luminancia para cada píxel
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const luminance = calculateLuminance(r, g, b);
+      luminanceValues.push(luminance);
+    }
+  
+    // Analizar los valores de luminancia para consistencia
+    let totalDifference = 0;
+    for (let i = 0; i < luminanceValues.length - 1; i++) {
+      totalDifference += Math.abs(luminanceValues[i] - luminanceValues[i + 1]);
+    }
+  
+    const averageDifference = totalDifference / luminanceValues.length;
+  
+    return averageDifference; // Valores bajos indican consistencia en la iluminación
+  };
+
+  const interpretLightingScore = (score: number): string => {
+    if (score >= 0.9) {
+      return "Very consistent lighting, typical of natural images";
+    } else if (score >= 0.7) {
+      return "Mostly consistent lighting, but with some minor variations";
+    } else if (score >= 0.5) {
+      return "Moderately consistent lighting, could be natural or AI-generated";
+    } else if (score >= 0.3) {
+      return "Inconsistent lighting, possibly AI-generated or heavily edited";
+    } else {
+      return "Highly inconsistent lighting, likely AI-generated or composite image";
+    }
+  };
+
+  useEffect(() => {
+    if (image) {
+      const img = new Image();
+      img.crossOrigin = "Anonymous"; 
+      img.onload = () => {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            canvas.width = img.width;
+            canvas.height = img.height;
+            
+            ctx.drawImage(img, 0, 0);
+            
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const lightingConsistency = analyzeLightingConsistency(imageData);
+            
+            console.log("Lighting Consistency Score:", lightingConsistency);
+            
+            const processedData = adjustSaturation(imageData, saturation);
+            ctx.putImageData(processedData, 0, 0);
+            setSaturatedImage(canvas.toDataURL());
+          }
+        }
+      };
+      img.onerror = () => {
+        alert("Failed to load image. Please check the URL or try another image.");
+      };
+      img.src = image;
+    }
+  }, [image, saturation]);
+
+  const [lightingScore, setLightingScore] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (image) {
+      const img = new Image();
+      img.crossOrigin = "Anonymous"; 
+      img.onload = () => {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            canvas.width = img.width;
+            canvas.height = img.height;
+            
+            ctx.drawImage(img, 0, 0);
+            
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const lightingConsistency = analyzeLightingConsistency(imageData);
+            
+            setLightingScore(lightingConsistency);
+            
+            const processedData = adjustSaturation(imageData, saturation);
+            ctx.putImageData(processedData, 0, 0);
+            setSaturatedImage(canvas.toDataURL());
+          }
+        }
+      };
+      img.onerror = () => {
+        alert("Failed to load image. Please check the URL or try another image.");
+      };
+      img.src = image;
+    }
+  }, [image, saturation]);
+  
+  
  
   const handleUrlSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -144,10 +255,102 @@ export default function Home() {
     }
   };
 
+  const analyzeReflections = (imageData: ImageData): number => {
+    const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+    let reflectionPoints = 0;
+    let totalPoints = 0;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 4;
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+
+        // Check for bright spots (potential reflections)
+        if (r > 200 && g > 200 && b > 200) {
+          reflectionPoints++;
+
+          // Check surrounding pixels for consistency
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (dx === 0 && dy === 0) continue;
+              const nx = x + dx;
+              const ny = y + dy;
+              if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                const ni = (ny * width + nx) * 4;
+                const nr = data[ni];
+                const ng = data[ni + 1];
+                const nb = data[ni + 2];
+                if (Math.abs(r - nr) + Math.abs(g - ng) + Math.abs(b - nb) < 150) {
+                  totalPoints++;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return totalPoints / (reflectionPoints * 8 + 1); // Normalize score
+  };
+
+  // Function to interpret reflection score
+  const interpretReflectionScore = (score: number): string => {
+    if (score >= 0.9) {
+      return "Very consistent reflections, typical of natural images";
+    } else if (score >= 0.7) {
+      return "Mostly consistent reflections, with some minor anomalies";
+    } else if (score >= 0.5) {
+      return "Moderately consistent reflections, could be natural or AI-generated";
+    } else if (score >= 0.3) {
+      return "Inconsistent reflections, possibly AI-generated or heavily edited";
+    } else {
+      return "Highly inconsistent reflections, likely AI-generated or composite image";
+    }
+  };
+
+  useEffect(() => {
+    if (image) {
+      const img = new Image();
+      img.crossOrigin = "Anonymous";
+      
+      img.onload = () => {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            canvas.width = img.width;
+            canvas.height = img.height;
+            
+            ctx.drawImage(img, 0, 0);
+            
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const lightingConsistency = analyzeLightingConsistency(imageData);
+            const reflectionConsistency = analyzeReflections(imageData);
+            
+            setLightingScore(lightingConsistency);
+            setReflectionScore(reflectionConsistency);
+            
+            const processedData = adjustSaturation(imageData, saturation);
+            ctx.putImageData(processedData, 0, 0);
+            setSaturatedImage(canvas.toDataURL());
+          }
+        }
+      };
+      img.onerror = () => {
+        alert("Failed to load image. Please check the URL or try another image.");
+      };
+      img.src = image;
+    }
+  }, [image, saturation]);
+
   return (
     <main className="min-h-screen bg-black text-neon-blue flex flex-col items-center justify-center p-4 sm:p-8">
       <div className="w-full max-w-7xl bg-gray-900 border-2 border-neon-pink rounded-lg shadow-lg shadow-neon-pink/50 p-4 sm:p-8">
-        <h1 className="text-3xl sm:text-4xl font-bold text-center mb-6 sm:mb-8 text-neon-pink cyberpunk-glitch">Image Saturation Adjuster</h1>
+        <h1 className="text-3xl sm:text-4xl font-bold text-center mb-6 sm:mb-8 text-neon-pink cyberpunk-glitch">Image Saturation Adjuster V0.1.0</h1>
         
         <div className="flex flex-col lg:flex-row gap-6 sm:gap-8">
           {/* Left column for image input options */}
@@ -202,6 +405,32 @@ export default function Home() {
                   onChange={(e) => setSaturation(Number(e.target.value))}
                   className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
                 />
+              </div>
+            )}
+
+            {/* Lighting Consistency Score */}
+            {lightingScore !== null && (
+              <div className="mt-4 p-4 bg-gray-800 rounded-lg border border-neon-green">
+                <h3 className="text-lg font-semibold text-neon-pink mb-2">Lighting Consistency Analysis</h3>
+                <p className="text-neon-green mb-2">
+                  Score: {lightingScore.toFixed(2)}
+                </p>
+                <p className="text-neon-blue">
+                  Interpretation: {interpretLightingScore(lightingScore)}
+                </p>
+              </div>
+            )}
+
+            {/* Reflection Consistency Score */}
+            {reflectionScore !== null && (
+              <div className="mt-4 p-4 bg-gray-800 rounded-lg border border-neon-green">
+                <h3 className="text-lg font-semibold text-neon-pink mb-2">Reflection Consistency Analysis</h3>
+                <p className="text-neon-green mb-2">
+                  Score: {reflectionScore.toFixed(2)}
+                </p>
+                <p className="text-neon-blue">
+                  Interpretation: {interpretReflectionScore(reflectionScore)}
+                </p>
               </div>
             )}
 
