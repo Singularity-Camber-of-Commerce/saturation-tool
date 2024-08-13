@@ -8,6 +8,11 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      colors: {
+        'neon-blue': '#00f3ff',
+        'neon-pink': '#ff00ff',
+        'neon-green': '#00ff00',
+      },
       backgroundImage: {
         "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
         "gradient-conic":
